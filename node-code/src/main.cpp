@@ -10,11 +10,12 @@
 //************************************************************
 #include <painlessMesh.h>
 #include <Arduino.h>
+#include <Stepper.h>
 
 // some gpio pin that is connected to an LED...
 // on my rig, this is 5, change to the right number of your LED.
 #define   LED             0       // GPIO number of connected LED, ON ESP-12 IS GPIO2
-#define   MESSAGE_LED     13
+#define   MESSAGE_LED     2
 #define   BUTTON          4
 
 #define   BLINK_PERIOD    3000 // milliseconds until cycle repeat
@@ -24,6 +25,9 @@
 #define   MESH_PASSWORD   "somethingSneaky"
 #define   MESH_PORT       5555
 
+#define   NUM_STEPS       171
+#define   TOTAL_STEPS     513
+
 // Prototypes
 void sendMessage(); 
 void receivedCallback(uint32_t from, String & msg);
@@ -31,9 +35,12 @@ void newConnectionCallback(uint32_t nodeId);
 void changedConnectionCallback(); 
 void nodeTimeAdjustedCallback(int32_t offset); 
 void delayReceivedCallback(uint32_t from, int32_t delay);
+void lockdown();
+void unlock();
 
 Scheduler     userScheduler; // to control your personal task
 painlessMesh  mesh;
+Stepper       stepper(TOTAL_STEPS, 14, 12, 13, 15);
 
 bool calc_delay = false;
 SimpleList<uint32_t> nodes;
@@ -44,6 +51,7 @@ Task taskSendMessage( TASK_SECOND * 1, TASK_FOREVER, &sendMessage ); // start wi
 // Task to blink the number of nodes
 Task blinkNoNodes;
 bool onFlag = false;
+bool lockFlag = false;
 
 void setup() {
   Serial.begin(115200);
@@ -87,6 +95,7 @@ void setup() {
   blinkNoNodes.enable();
 
   randomSeed(analogRead(A0));
+  stepper.setSpeed(60);
 }
 
 void loop() {
@@ -94,6 +103,22 @@ void loop() {
   mesh.update();
   digitalWrite(LED, !onFlag);
   Serial.println(mesh.getNodeList().size());
+  bool buttonPress = digitalRead(BUTTON);
+  if(buttonPress){
+    lockFlag = !lockFlag;
+    String msg = "unpressed";
+    if(lockFlag) {
+      digitalWrite(MESSAGE_LED, HIGH);
+      msg = "pressed";
+      lockdown();
+    }
+    else {
+      digitalWrite(MESSAGE_LED, LOW);
+      unlock();
+    }
+    mesh.sendBroadcast(msg);
+    delay(500);
+  }
 }
 
 void sendMessage() {
@@ -126,10 +151,14 @@ void sendMessage() {
 
 void receivedCallback(uint32_t from, String & msg) {
   if(msg.equals("pressed")){
+    lockFlag = true;
     digitalWrite(MESSAGE_LED, HIGH);
+    lockdown();
   }
   else {
+    lockFlag = false;
     digitalWrite(MESSAGE_LED, LOW);
+    unlock();
   }
   Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
 }
@@ -170,4 +199,12 @@ void nodeTimeAdjustedCallback(int32_t offset) {
 
 void delayReceivedCallback(uint32_t from, int32_t delay) {
   Serial.printf("Delay to node %u is %d us\n", from, delay);
+}
+
+void lockdown() {
+  stepper.step(NUM_STEPS);
+}
+
+void unlock() {
+  stepper.step(-NUM_STEPS);
 }
