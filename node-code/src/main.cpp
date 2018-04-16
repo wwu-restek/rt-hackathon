@@ -15,8 +15,10 @@
 // some gpio pin that is connected to an LED...
 // on my rig, this is 5, change to the right number of your LED.
 #define   LED             0       // GPIO number of connected LED, ON ESP-12 IS GPIO2
-#define   MESSAGE_LED     2
-#define   BUTTON          4
+#define   GREEN_BUTTON    2
+#define   RED_BUTTON      4
+#define   GREEN_LED       16
+#define   RED_LED         5
 
 #define   BLINK_PERIOD    3000 // milliseconds until cycle repeat
 #define   BLINK_DURATION  100  // milliseconds LED is on for
@@ -54,11 +56,13 @@ bool onFlag = false;
 bool lockFlag = false;
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   pinMode(LED, OUTPUT);
-  pinMode(MESSAGE_LED, OUTPUT);
-  pinMode(BUTTON, INPUT);
+  pinMode(GREEN_BUTTON, INPUT);
+  pinMode(RED_BUTTON, INPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
   //mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC | COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
   //mesh.setDebugMsgTypes(ERROR | DEBUG | CONNECTION | COMMUNICATION);  // set before init() so that you can see startup messages
   mesh.setDebugMsgTypes(ERROR | DEBUG | CONNECTION);  // set before init() so that you can see startup messages
@@ -70,8 +74,8 @@ void setup() {
   mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
   mesh.onNodeDelayReceived(&delayReceivedCallback);
 
-  userScheduler.addTask( taskSendMessage );
-  taskSendMessage.enable();
+  //userScheduler.addTask( taskSendMessage );
+  //taskSendMessage.enable();
 
   blinkNoNodes.set(BLINK_PERIOD, (mesh.getNodeList().size() + 1) * 2, []() {
       // If on, switch off, else switch on
@@ -102,27 +106,40 @@ void loop() {
   userScheduler.execute(); // it will run mesh scheduler as well
   mesh.update();
   digitalWrite(LED, !onFlag);
-  Serial.println(mesh.getNodeList().size());
-  bool buttonPress = digitalRead(BUTTON);
-  if(buttonPress){
-    lockFlag = !lockFlag;
-    String msg = "unpressed";
-    if(lockFlag) {
-      digitalWrite(MESSAGE_LED, HIGH);
-      msg = "pressed";
-      lockdown();
-    }
-    else {
-      digitalWrite(MESSAGE_LED, LOW);
-      unlock();
-    }
+  //Serial.println(mesh.getNodeList().size());
+  Serial.println("Button state:");
+  bool red_button = digitalRead(RED_BUTTON);
+  Serial.println(red_button);
+  bool green_button = digitalRead(GREEN_BUTTON);
+  Serial.println(green_button);
+  delay(1000);
+  String msg;
+  if(red_button){
+    lockFlag = true;
+    msg = "lock";
+    digitalWrite(RED_LED, HIGH);
+    digitalWrite(GREEN_LED, LOW);
+    //Serial.println("Sending lock");
     mesh.sendBroadcast(msg);
     delay(500);
   }
+  if(green_button){
+    lockFlag = false;
+    msg = "unlock";
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, HIGH);
+    //Serial.println("Sending unlock");
+    mesh.sendBroadcast(msg);
+    delay(500);
+  }
+  // if(lockFlag)
+  //   Serial.println("Lock flag set to true");
+  // else 
+  //   Serial.println("Lock flag set to false");
 }
 
 void sendMessage() {
-  bool buttonState = digitalRead(BUTTON);
+  bool buttonState = digitalRead(RED_BUTTON);
   String msg = "not pressed";
   if(buttonState) {
     msg = "pressed";
@@ -150,14 +167,16 @@ void sendMessage() {
 
 
 void receivedCallback(uint32_t from, String & msg) {
-  if(msg.equals("pressed")){
+  if(msg.equals("lock")){
     lockFlag = true;
-    digitalWrite(MESSAGE_LED, HIGH);
+    digitalWrite(RED_LED, HIGH);
+    digitalWrite(GREEN_LED, LOW);
     lockdown();
   }
   else {
     lockFlag = false;
-    digitalWrite(MESSAGE_LED, LOW);
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, HIGH);
     unlock();
   }
   Serial.printf("startHere: Received from %u msg=%s\n", from, msg.c_str());
